@@ -18,7 +18,8 @@ import time
 import requests
 from ddgs import DDGS
 from strands.tools.decorator import tool
-
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 # Configure logging
 logging.basicConfig(
@@ -39,7 +40,18 @@ HTTP_TIMEOUT_SECONDS = 10
 # ---------------------------------------------------------------------------
 # Private helpers (used by the public tool functions below)
 # ---------------------------------------------------------------------------
-
+CITY_TIMEZONES = {
+    "tokyo": "Asia/Tokyo",
+    "new york": "America/New_York",
+    "london": "Europe/London",
+    "paris": "Europe/Paris",
+    "los angeles": "America/Los_Angeles",
+    "washington dc": "America/New_York",
+    "washington": "America/New_York",
+    "dubai": "Asia/Dubai",
+    "berlin": "Europe/Berlin",
+    "sydney": "Australia/Sydney",
+}
 
 def _geocode_location(
     place_name: str
@@ -127,6 +139,89 @@ def _format_distance(
 # Public tool functions (registered with the Strands agent)
 # ---------------------------------------------------------------------------
 
+@tool
+def get_current_time(city: str) -> str:
+    try:
+        logger.info(f"[Tool] get_current_time: city='{city}'")
+
+        city = city.strip().lower()
+        timezone = CITY_TIMEZONES.get(city)
+        
+        if not timezone:
+            logger.warning(f"[Tool] get_current_time: unknown city '{city}'")
+            return json.dumps({"error": f"City '{city}' not found in timezone map."})
+        now = datetime.now(ZoneInfo(timezone))
+        
+        offset_raw = now.strftime("%z")
+        utc_offset = f"{offset_raw[:3]}:{offset_raw[3:]}" if offset_raw else None
+
+        result = {
+            "city": city,
+            "timezone": timezone,
+            "timezone_abbreviation": now.strftime("%Z"),
+            "local_time": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "utc_offset": utc_offset,
+        }
+        logger.info(
+            f"[Tool] get_current_time: {city} -> {result['local_time']} {result['timezone_abbreviation']}"
+        )
+        return json.dumps(result, indent=2)
+
+    except Exception as e:
+        logger.error(f"[Tool] get_current_time failed: {e}")
+        return json.dumps({"error": str(e)})
+
+
+@tool
+def get_exchange(
+    from_currency: str,
+    to_currency: str,
+    amount: float = 1.0
+) -> str:
+    try:
+        logger.info(
+            f"[Tool] get_exchange_rate: from='{from_currency}', to='{to_currency}', amount={amount}"
+        )
+
+        base = from_currency.strip().upper()
+        target = to_currency.strip().upper()
+
+        response = requests.get(
+            "https://api.frankfurter.app/latest",
+            params={
+                "from": base,
+                "to": target,
+            },
+            timeout=HTTP_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        rates = data.get("rates", {})
+        if target not in rates:
+            logger.warning(f"[Tool] get_exchange_rate: no rate for {base}->{target}")
+            return json.dumps({"error": f"Could not find exchange rate from {base} to {target}."})
+
+        rate = rates[target]
+        converted_amount = amount * rate
+
+        result = {
+            "from_currency": base,
+            "to_currency": target,
+            "rate": rate,
+            "amount": amount,
+            "converted_amount": round(converted_amount, 4),
+            "date": data.get("date"),
+        }
+
+        logger.info(
+            f"[Tool] get_exchange_rate: {amount} {base} = {result['converted_amount']} {target}"
+        )
+        return json.dumps(result, indent=2)
+
+    except Exception as e:
+        logger.error(f"[Tool] get_exchange_rate failed: {e}")
+        return json.dumps({"error": str(e)})
 
 @tool
 def duckduckgo_search(

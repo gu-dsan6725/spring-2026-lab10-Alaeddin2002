@@ -23,6 +23,8 @@ from tools import (
     duckduckgo_search,
     get_directions,
     get_weather,
+    get_exchange,
+    get_current_time,
 )
 
 
