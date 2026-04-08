@@ -15,6 +15,7 @@ from datetime import (
 from typing import Optional
 
 from strands.tools.decorator import tool
+from zoneinfo import ZoneInfo
 
 
 # Configure logging
